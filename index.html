@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Flow-Map Scenario Builder</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: #fff; 
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255,255,255,0.1);
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .flow-canvas {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background: 
+                radial-gradient(circle at 25% 25%, rgba(120, 119, 198, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 75% 75%, rgba(255, 119, 198, 0.1) 0%, transparent 50%);
+            cursor: grab;
+        }
+        
+        .flow-canvas.dragging {
+            cursor: grabbing;
+        }
+        
+        .grid-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.1;
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+        }
+        
+        .flow-node {
+            position: absolute;
+            min-width: 180px;
+            min-height: 120px;
+            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 16px;
+            padding: 16px;
+            cursor: move;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        
+        .flow-node:hover {
+            border-color: rgba(120, 119, 198, 0.8);
+            box-shadow: 0 12px 40px rgba(120, 119, 198, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .flow-node.selected {
+            border-color: #7877c6;
+            box-shadow: 0 0 0 3px rgba(120, 119, 198, 0.3);
+        }
+        
+        .flow-node.video-node {
+            border-color: rgba(76, 175, 80, 0.6);
+        }
+        
+        .flow-node.choice-node {
+            border-color: rgba(255, 193, 7, 0.6);
+        }
+        
+        .flow-node.video-node:hover {
+            border-color: rgba(76, 175, 80, 1);
+            box-shadow: 0 12px 40px rgba(76, 175, 80, 0.2);
+        }
+        
+        .flow-node.choice-node:hover {
+            border-color: rgba(255, 193, 7, 1);
+            box-shadow: 0 12px 40px rgba(255, 193, 7, 0.2);
+        }
+        
+        .node-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .node-icon {
+            font-size: 24px;
+            margin-right: 8px;
+        }
+        
+        .node-title {
+            font-weight: bold;
+            font-size: 14px;
+            color: #fff;
+        }
+        
+        .node-content {
+            font-size: 12px;
+            color: rgba(255,255,255,0.8);
+            line-height: 1.4;
+        }
+        
+        .connection-point {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #7877c6;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .connection-point:hover {
+            width: 16px;
+            height: 16px;
+            margin: -2px;
+            background: #ff77c6;
+        }
+        
+        .connection-point.output {
+            right: -6px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        .connection-point.input {
+            left: -6px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
+        .connection-line {
+            position: absolute;
+            pointer-events: none;
+            z-index: 1;
+        }
+        
+        .connection-line svg {
+            overflow: visible;
+        }
+        
+        .connection-path {
+            fill: none;
+            stroke: rgba(120, 119, 198, 0.6);
+            stroke-width: 3;
+            filter: drop-shadow(0 0 6px rgba(120, 119, 198, 0.3));
+        }
+        
+        .connection-path.selected {
+            stroke: #7877c6;
+            stroke-width: 4;
+        }
+        
+        .add-node-btn {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #7877c6, #6366b5);
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 8px 32px rgba(120, 119, 198, 0.4);
+            transition: all 0.3s ease;
+        }
+        
+        .add-node-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 12px 40px rgba(120, 119, 198, 0.6);
+        }
+        
+        .sidebar h2 {
+            color: #7877c6;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        
+        .sidebar h3 {
+            color: #fff;
+            margin: 20px 0 10px 0;
+            font-size: 14px;
+        }
+        
+        .property-group {
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .property-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: rgba(255,255,255,0.8);
+        }
+        
+        .property-group input, .property-group textarea, .property-group select {
+            width: 100%;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            padding: 8px;
+            color: #fff;
+            font-size: 12px;
+        }
+        
+        .property-group input:focus, .property-group textarea:focus, .property-group select:focus {
+            border-color: #7877c6;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(120, 119, 198, 0.2);
+        }
+        
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .tool-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+        
+        .tool-btn:hover {
+            background: rgba(120, 119, 198, 0.3);
+            border-color: #7877c6;
+        }
+        
+        .tool-btn.active {
+            background: #7877c6;
+            border-color: #7877c6;
+        }
+        
+        .node-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .node-list-item {
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px;
+            padding: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s ease;
+        }
+        
+        .node-list-item:hover {
+            background: rgba(120, 119, 198, 0.2);
+        }
+        
+        .node-list-item.selected {
+            background: rgba(120, 119, 198, 0.4);
+        }
+        
+        .vr-preview {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .vr-scene {
+            width: 80%;
+            height: 80%;
+            background: radial-gradient(circle, #1a1a2e 0%, #000 100%);
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .spatial-prompt {
+            position: absolute;
+            background: rgba(255,255,255,0.9);
+            color: #000;
+            padding: 10px 15px;
+            border-radius: 25px;
+            font-size: 14px;
+            cursor: move;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        .exit-vr {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="sidebar">
+            <h2>🎬 Scenario Flow</h2>
+            
+            <div class="toolbar">
+                <button class="tool-btn active" data-tool="select">✋ Select</button>
+                <button class="tool-btn" data-tool="connect">🔗 Connect</button>
+                <button class="tool-btn" data-tool="spatial">📍 Spatial</button>
+            </div>
+            
+            <div class="property-group">
+                <h3>Add Nodes</h3>
+                <button class="tool-btn" onclick="addVideoNode()" style="width: 100%; margin-bottom: 8px;">🎥 Video Node</button>
+                <button class="tool-btn" onclick="addChoiceNode()" style="width: 100%;">❓ Choice Node</button>
+            </div>
+            
+            <div class="property-group">
+                <h3>Node Properties</h3>
+                <div id="node-properties">
+                    <p style="color: rgba(255,255,255,0.5); font-size: 12px;">Select a node to edit properties</p>
+                </div>
+            </div>
+            
+            <div class="property-group">
+                <h3>Flow Overview</h3>
+                <div class="node-list" id="node-list">
+                    <!-- Nodes will be listed here -->
+                </div>
+            </div>
+            
+            <div class="property-group">
+                <h3>Actions</h3>
+                <button class="tool-btn" onclick="testInVR()" style="width: 100%; margin-bottom: 8px;">🥽 Test in VR</button>
+                <button class="tool-btn" onclick="exportFlow()" style="width: 100%;">📦 Export</button>
+            </div>
+        </div>
+        
+        <div class="canvas-container">
+            <div class="flow-canvas" id="flowCanvas">
+                <div class="grid-overlay"></div>
+                <!-- Nodes and connections will be added here -->
+            </div>
+            <button class="add-node-btn" onclick="showAddMenu()">+</button>
+        </div>
+    </div>
+    
+    <!-- VR Preview Mode -->
+    <div class="vr-preview" id="vrPreview">
+        <div class="vr-scene" id="vrScene">
+            <button class="exit-vr" onclick="exitVR()">Exit VR</button>
+            <div class="spatial-prompt" style="top: 30%; left: 20%;" onclick="handleSpatialChoice(0)">
+                🎯 Continue Forward
+            </div>
+            <div class="spatial-prompt" style="top: 60%; right: 25%;" onclick="handleSpatialChoice(1)">
+                🔄 Turn Around
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let nodes = [];
+        let connections = [];
+        let selectedNode = null;
+        let currentTool = 'select';
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        let connectingFrom = null;
+        let nodeIdCounter = 0;
+        
+        // Initialize with a start node
+        window.onload = function() {
+            addVideoNode(100, 100, "Start Video", "Welcome to the experience");
+            updateDisplay();
+        };
+        
+        function addVideoNode(x = 300, y = 200, title = "New Video", content = "360° video content") {
+            const node = {
+                id: nodeIdCounter++,
+                type: 'video',
+                x: x,
+                y: y,
+                title: title,
+                content: content,
+                videoFile: '',
+                duration: 30,
+                choices: []
+            };
+            nodes.push(node);
+            createNodeElement(node);
+            updateNodeList();
+            return node;
+        }
+        
+        function addChoiceNode(x = 500, y = 300, title = "Decision Point") {
+            const node = {
+                id: nodeIdCounter++,
+                type: 'choice',
+                x: x,
+                y: y,
+                title: title,
+                question: "What should happen next?",
+                options: ["Option 1", "Option 2"],
+                timing: 15
+            };
+            nodes.push(node);
+            createNodeElement(node);
+            updateNodeList();
+            return node;
+        }
+        
+        function createNodeElement(node) {
+            const nodeEl = document.createElement('div');
+            nodeEl.className = `flow-node ${node.type}-node`;
+            nodeEl.style.left = node.x + 'px';
+            nodeEl.style.top = node.y + 'px';
+            nodeEl.dataset.nodeId = node.id;
+            
+            const icon = node.type === 'video' ? '🎥' : '❓';
+            
+            nodeEl.innerHTML = `
+                <div class="node-header">
+                    <span class="node-icon">${icon}</span>
+                    <span class="node-title">${node.title}</span>
+                </div>
+                <div class="node-content">${node.type === 'video' ? node.content : node.question}</div>
+                <div class="connection-point input"></div>
+                <div class="connection-point output"></div>
+            `;
+            
+            // Add event listeners
+            nodeEl.addEventListener('mousedown', startDrag);
+            nodeEl.addEventListener('click', selectNode);
+            
+            // Connection point listeners
+            const outputPoint = nodeEl.querySelector('.connection-point.output');
+            const inputPoint = nodeEl.querySelector('.connection-point.input');
+            
+            outputPoint.addEventListener('click', handleConnectionClick);
+            inputPoint.addEventListener('click', handleConnectionClick);
+            
+            document.getElementById('flowCanvas').appendChild(nodeEl);
+        }
+        
+        function startDrag(e) {
+            if (currentTool !== 'select') return;
+            
+            e.stopPropagation();
+            isDragging = true;
+            const nodeEl = e.target.closest('.flow-node');
+            const rect = nodeEl.getBoundingClientRect();
+            
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            
+            document.addEventListener('mousemove', dragNode);
+            document.addEventListener('mouseup', stopDrag);
+        }
+        
+        function dragNode(e) {
+            if (!isDragging) return;
+            
+            const canvas = document.getElementById('flowCanvas');
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            const x = e.clientX - canvasRect.left - dragOffset.x;
+            const y = e.clientY - canvasRect.top - dragOffset.y;
+            
+            const nodeEl = document.querySelector('.flow-node.selected');
+            if (nodeEl) {
+                nodeEl.style.left = x + 'px';
+                nodeEl.style.top = y + 'px';
+                
+                // Update node data
+                const nodeId = parseInt(nodeEl.dataset.nodeId);
+                const node = nodes.find(n => n.id === nodeId);
+                if (node) {
+                    node.x = x;
+                    node.y = y;
+                }
+                
+                updateConnections();
+            }
+        }
+        
+        function stopDrag() {
+            isDragging = false;
+            document.removeEventListener('mousemove', dragNode);
+            document.removeEventListener('mouseup', stopDrag);
+        }
+        
+        function selectNode(e) {
+            e.stopPropagation();
+            const nodeEl = e.target.closest('.flow-node');
+            
+            // Remove previous selection
+            document.querySelectorAll('.flow-node.selected').forEach(el => {
+                el.classList.remove('selected');
+            });
+            
+            // Select new node
+            nodeEl.classList.add('selected');
+            const nodeId = parseInt(nodeEl.dataset.nodeId);
+            selectedNode = nodes.find(n => n.id === nodeId);
+            
+            updateNodeProperties();
+            updateNodeList();
+        }
+        
+        function handleConnectionClick(e) {
+            e.stopPropagation();
+            
+            if (currentTool !== 'connect') return;
+            
+            const nodeEl = e.target.closest('.flow-node');
+            const nodeId = parseInt(nodeEl.dataset.nodeId);
+            const isOutput = e.target.classList.contains('output');
+            
+            if (isOutput && !connectingFrom) {
+                // Start connection
+                connectingFrom = nodeId;
+                e.target.style.background = '#ff77c6';
+            } else if (!isOutput && connectingFrom && connectingFrom !== nodeId) {
+                // Complete connection
+                createConnection(connectingFrom, nodeId);
+                
+                // Reset connection state
+                document.querySelectorAll('.connection-point').forEach(point => {
+                    point.style.background = '#7877c6';
+                });
+                connectingFrom = null;
+            }
+        }
+        
+        function createConnection(fromId, toId) {
+            const connection = { from: fromId, to: toId };
+            connections.push(connection);
+            updateConnections();
+        }
+        
+        function updateConnections() {
+            // Remove existing connection lines
+            document.querySelectorAll('.connection-line').forEach(line => line.remove());
+            
+            connections.forEach((conn, index) => {
+                const fromNode = document.querySelector(`[data-node-id="${conn.from}"]`);
+                const toNode = document.querySelector(`[data-node-id="${conn.to}"]`);
+                
+                if (fromNode && toNode) {
+                    drawConnection(fromNode, toNode, index);
+                }
+            });
+        }
+        
+        function drawConnection(fromEl, toEl, index) {
+            const canvas = document.getElementById('flowCanvas');
+            
+            const fromRect = fromEl.getBoundingClientRect();
+            const toRect = toEl.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            const fromX = fromRect.right - canvasRect.left;
+            const fromY = fromRect.top + fromRect.height / 2 - canvasRect.top;
+            const toX = toRect.left - canvasRect.left;
+            const toY = toRect.top + toRect.height / 2 - canvasRect.top;
+            
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.style.position = 'absolute';
+            svg.style.top = '0';
+            svg.style.left = '0';
+            svg.style.width = '100%';
+            svg.style.height = '100%';
+            svg.style.pointerEvents = 'none';
+            svg.style.zIndex = '1';
+            svg.classList.add('connection-line');
+            
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            
+            const midX = (fromX + toX) / 2;
+            const controlX1 = fromX + (midX - fromX) * 0.5;
+            const controlX2 = toX - (toX - midX) * 0.5;
+            
+            const d = `M ${fromX} ${fromY} C ${controlX1} ${fromY}, ${controlX2} ${toY}, ${toX} ${toY}`;
+            
+            path.setAttribute('d', d);
+            path.classList.add('connection-path');
+            
+            svg.appendChild(path);
+            canvas.appendChild(svg);
+        }
+        
+        function updateNodeProperties() {
+            const propertiesContainer = document.getElementById('node-properties');
+            
+            if (!selectedNode) {
+                propertiesContainer.innerHTML = '<p style="color: rgba(255,255,255,0.5); font-size: 12px;">Select a node to edit properties</p>';
+                return;
+            }
+            
+            let html = '';
+            
+            if (selectedNode.type === 'video') {
+                html = `
+                    <label>Video Title:</label>
+                    <input type="text" value="${selectedNode.title}" onchange="updateNodeProperty('title', this.value)">
+                    
+                    <label>Content Description:</label>
+                    <textarea rows="2" onchange="updateNodeProperty('content', this.value)">${selectedNode.content}</textarea>
+                    
+                    <label>Duration (seconds):</label>
+                    <input type="number" value="${selectedNode.duration}" onchange="updateNodeProperty('duration', parseInt(this.value))">
+                    
+                    <button class="tool-btn" onclick="uploadVideo()" style="width: 100%; margin-top: 10px;">📁 Upload Video</button>
+                `;
+            } else if (selectedNode.type === 'choice') {
+                html = `
+                    <label>Choice Title:</label>
+                    <input type="text" value="${selectedNode.title}" onchange="updateNodeProperty('title', this.value)">
+                    
+                    <label>Question:</label>
+                    <textarea rows="2" onchange="updateNodeProperty('question', this.value)">${selectedNode.question}</textarea>
+                    
+                    <label>Show at (seconds):</label>
+                    <input type="number" value="${selectedNode.timing}" onchange="updateNodeProperty('timing', parseInt(this.value))">
+                    
+                    <h4 style="margin: 15px 0 5px 0;">Options:</h4>
+                    ${selectedNode.options.map((option, i) => `
+                        <input type="text" value="${option}" onchange="updateChoiceOption(${i}, this.value)" style="margin-bottom: 5px;">
+                    `).join('')}
+                    
+                    <button class="tool-btn" onclick="addChoiceOption()" style="width: 100%; margin-top: 10px;">+ Add Option</button>
+                `;
+            }
+            
+            propertiesContainer.innerHTML = html;
+        }
+        
+        function updateNodeProperty(property, value) {
+            if (selectedNode) {
+                selectedNode[property] = value;
+                updateNodeElement(selectedNode);
+                updateNodeList();
+            }
+        }
+        
+        function updateChoiceOption(index, value) {
+            if (selectedNode && selectedNode.options) {
+                selectedNode.options[index] = value;
+            }
+        }
+        
+        function addChoiceOption() {
+            if (selectedNode && selectedNode.options) {
+                selectedNode.options.push("New Option");
+                updateNodeProperties();
+            }
+        }
+        
+        function updateNodeElement(node) {
+            const nodeEl = document.querySelector(`[data-node-id="${node.id}"]`);
+            if (nodeEl) {
+                const titleEl = nodeEl.querySelector('.node-title');
+                const contentEl = nodeEl.querySelector('.node-content');
+                
+                titleEl.textContent = node.title;
+                contentEl.textContent = node.type === 'video' ? node.content : node.question;
+            }
+        }
+        
+        function updateNodeList() {
+            const listContainer = document.getElementById('node-list');
+            
+            const html = nodes.map(node => `
+                <div class="node-list-item ${selectedNode && selectedNode.id === node.id ? 'selected' : ''}" 
+                     onclick="selectNodeById(${node.id})">
+                    ${node.type === 'video' ? '🎥' : '❓'} ${node.title}
+                </div>
+            `).join('');
+            
+            listContainer.innerHTML = html;
+        }
+        
+        function selectNodeById(nodeId) {
+            const nodeEl = document.querySelector(`[data-node-id="${nodeId}"]`);
+            if (nodeEl) {
+                nodeEl.click();
+            }
+        }
+        
+        function updateDisplay() {
+            updateConnections();
+            updateNodeList();
+        }
+        
+        // Tool switching
+        document.querySelectorAll('[data-tool]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentTool = this.dataset.tool;
+                
+                // Reset connection state when switching tools
+                if (currentTool !== 'connect') {
+                    connectingFrom = null;
+                    document.querySelectorAll('.connection-point').forEach(point => {
+                        point.style.background = '#7877c6';
+                    });
+                }
+            });
+        });
+        
+        // Canvas click handling
+        document.getElementById('flowCanvas').addEventListener('click', function(e) {
+            if (e.target === this) {
+                // Clicked on empty canvas
+                document.querySelectorAll('.flow-node.selected').forEach(el => {
+                    el.classList.remove('selected');
+                });
+                selectedNode = null;
+                updateNodeProperties();
+                updateNodeList();
+            }
+        });
+        
+        function showAddMenu() {
+            // For now, just add a video node at a random position
+            const x = Math.random() * 400 + 200;
+            const y = Math.random() * 300 + 200;
+            addVideoNode(x, y);
+        }
+        
+        function uploadVideo() {
+            alert("Video upload would open file picker - connected to selectedNode.id: " + selectedNode.id);
+        }
+        
+        function testInVR() {
+            document.getElementById('vrPreview').style.display = 'flex';
+        }
+        
+        function exitVR() {
+            document.getElementById('vrPreview').style.display = 'none';
+        }
+        
+        function handleSpatialChoice(choiceIndex) {
+            alert(`Spatial choice ${choiceIndex} selected! This would trigger the connected video flow.`);
+        }
+        
+        function exportFlow() {
+            const flowData = {
+                nodes: nodes,
+                connections: connections,
+                created: new Date().toISOString(),
+                version: "2.0"
+            };
+            
+            const dataStr = JSON.stringify(flowData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'scenario-flow.json';
+            link.click();
+            
+            alert("Flow exported! Ready for WebXR deployment.");
+        }
+    </script>
+</body>
+</html>
